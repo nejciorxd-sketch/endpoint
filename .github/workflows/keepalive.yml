@@ -1,0 +1,38 @@
+# Pinguje serwer licencji co 10 minut, zeby Render (free) go nie uspil.
+# Free tier usypia po 15 min bez ruchu, a zimny start trwa ~1 minute
+# — to bylo zrodlo "strona nieosiagalna".
+#
+# Ten workflow siedzi w PUBLICZNYM repo celowo: prywatne repo ma limit
+# 2000 minut Actions/mies., a ping co 10 min to ~4320 minut.
+# Publiczne repo ma Actions za darmo i bez limitu, a tutaj nie ma zadnych sekretow.
+name: keep-alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /healthz
+        env:
+          SERVICE_URL: ${{ vars.SERVICE_URL }}
+        run: |
+          if [ -z "$SERVICE_URL" ]; then
+            echo "Brak zmiennej SERVICE_URL — ustaw ja w Settings > Variables > Actions."
+            exit 1
+          fi
+          # 3 proby: pierwsza moze trafic w zimny start (~60 s)
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 "$SERVICE_URL/healthz" || echo 000)
+            echo "proba $i -> HTTP $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 20
+          done
+          echo "Serwer nie odpowiedzial 200."
+          exit 1
